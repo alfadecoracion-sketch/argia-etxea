@@ -43,6 +43,8 @@ header.top h1 small{display:block;font-size:12px;color:var(--muted);font-weight:
 .login .logo-big{color:var(--accent);text-align:center;margin-bottom:18px}
 .login .logo-big svg{height:90px;width:auto}
 body.out nav.tabs,body.out .periodo{display:none}
+body.tenant nav.tabs{display:none}
+body.tenant{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
 select,input,textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;min-height:42px;width:100%}
 .periodo select{width:auto;padding:6px 8px;min-height:36px;font-size:14px}
 main{padding:14px 16px;max-width:760px;margin:0 auto}
@@ -91,7 +93,8 @@ main{padding:14px 16px;max-width:760px;margin:0 auto}
 .mov .b .s{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mov .clip{font-size:12px;color:var(--muted)}
 nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:6}
-nav.tabs button{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);padding:6px 4px;cursor:pointer;min-width:58px;flex:1}
+nav.tabs button{background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--muted);padding:6px 2px;cursor:pointer;min-width:0;flex:1}
+nav.tabs button.add .p{width:46px!important}
 nav.tabs button svg{width:22px;height:22px}
 nav.tabs button.on{color:var(--accent);font-weight:600}
 nav.tabs button.add{color:#fff}
@@ -159,6 +162,7 @@ svg.chart text{font-size:10px;fill:var(--muted);font-family:inherit}
   <button data-v="movimientos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Movimientos</button>
   <button data-v="nuevo" class="add"><div class="p"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></div><span>Añadir</span></button>
   <button data-v="habitaciones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V5a2 2 0 012-2h10a2 2 0 012 2v16M3 21h18M17 21V9h2a2 2 0 012 2v10M10 12h.01"/></svg>Habitaciones</button>
+  <button data-v="documentos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Documentos</button>
   <button data-v="ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>Casa</button>
 </nav>
 <input type="file" id="fCam" accept="image/*" capture="environment" hidden>
@@ -228,13 +232,14 @@ $("#selAnio").onchange=e=>{S.year=+e.target.value;render()};
 $("#selMes").onchange=e=>{S.month=e.target.value==="all"?"all":+e.target.value;render()};
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
   if(b.dataset.v==="nuevo"){openAdd();return}
-  S.view=b.dataset.v;S.hab=null;document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));render();window.scrollTo(0,0)});
+  S.view=b.dataset.v;S.hab=null;if(S.view==="documentos")S.docs=null;document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));render();window.scrollTo(0,0)});
 
 /* ---------- render ---------- */
 function render(){
   $("#casa").textContent=cfg().casa||"";
   fillSelectors();
   const main=$("#main");
+  if(S.tenant){$("#main").innerHTML=viewTenant();bindTenant();return}
   if(!S.db)return;
   if(!S.movsLoaded||!S.cfgLoaded){main.innerHTML=`<div class="empty"><span class="spin"></span>Cargando datos…${S.stale?"<br><br>Tarda más de lo normal; puede que no haya conexión.":""}</div>`;return}
   let h=S.stale?`<div class="notice">No se ha podido confirmar la conexión: los datos pueden no estar al día.</div>`:"";
@@ -242,6 +247,7 @@ function render(){
   if(S.view==="resumen")h+=viewResumen();
   else if(S.view==="movimientos")h+=viewMovs();
   else if(S.view==="habitaciones")h+=S.hab?viewHab(S.hab):viewHabs();
+  else if(S.view==="documentos")h+=viewDocs();
   else h+=viewAjustes();
   main.innerHTML=h;
   bindView();
@@ -312,7 +318,7 @@ function viewResumen(){
 /* ---------- reparto por habitación ---------- */
 const repartoPersonas=()=>cfg().reparto==="personas";
 const habsReparto=()=>rooms().filter(r=>r.activa!==false);
-function partes(){return repartoPersonas()?Math.max(1,+cfg().personasReparto||1):Math.max(1,habsReparto().length)}
+function partes(){if(S.partesFijas)return S.partesFijas;return repartoPersonas()?Math.max(1,+cfg().personasReparto||1):Math.max(1,habsReparto().length)}
 const partesTxt=()=>repartoPersonas()?`las ${partes()} personas de la casa`:`las ${partes()} habitaciones alquiladas`;
 function gastosHab(id){
   // gastos del periodo: propios de la habitación + su parte de los comunes
@@ -485,9 +491,10 @@ function viewAjustes(){
   h+=`</div>${ro?"":`<button class="btn sec block" id="addPart">+ Añadir partida</button>`}</div>`;
   if(!ro)h+=`<button class="btn block" id="saveCfg">Guardar cambios</button><div style="height:14px"></div>`;
   h+=`<div class="card"><h2>Personas con acceso</h2><div id="miemBox" class="small muted">Cargando…</div>
-   <div class="f2" style="margin-top:10px"><div class="f"><input id="nmEmail" type="email" placeholder="correo@ejemplo.com"></div><div class="f"><input id="nmNombre" placeholder="Nombre"></div></div>
-   <button class="btn sec block" id="addMiem">+ Dar acceso</button>
-   <p class="small muted">Después esa persona entra en la web, pulsa "Crear cuenta" con ese mismo correo y elige su contraseña.</p></div>
+   <div class="f2" style="margin-top:12px"><div class="f"><label>Correo</label><input id="nmEmail" type="email" placeholder="correo@ejemplo.com"></div><div class="f"><label>Nombre</label><input id="nmNombre" placeholder="Nombre"></div></div>
+   <button class="btn sec block" id="addMiem">+ Dar acceso a la familia</button>
+   <p class="small muted">Para la familia: lo ve todo y puede editar. Después esa persona abre la web, pulsa "Familia: crear cuenta" con ese correo y elige su contraseña.</p></div>
+   <div class="card"><h2>Cuentas de las habitaciones</h2><p class="small muted" style="margin-top:0">Cada habitación tiene su usuario y contraseña. Los creáis vosotros y se los dais al inquilino. Con ellos solo se ven los pagos y los documentos de esa habitación. Cuando cambie el inquilino, poned una contraseña nueva.</p><div id="cuentasBox" class="small muted">Cargando…</div></div>
    <div class="card"><h2>Mi sesión</h2><p class="small muted" style="margin-top:0">${esc(S.email||"")}</p><button class="btn danger block" id="logout">Cerrar sesión</button></div>`;
   h+=`<div class="card"><h2>Exportar</h2><p class="small muted" style="margin-top:0">Descarga todos los movimientos de ${S.year} en un CSV que se abre con Excel.</p>
    <button class="btn sec block" id="expCsv">Descargar CSV de ${S.year}</button></div>`;
@@ -535,11 +542,17 @@ function bindView(){
   const ar=$("#addRoom");if(ar)ar.onclick=()=>{const box=$("#roomsBox");const i=box.children.length;box.insertAdjacentHTML("beforeend",roomEditor({activa:true},i,""))};
   const sc=$("#saveCfg");if(sc)sc.onclick=saveConfig;
   const ex=$("#expCsv");if(ex)ex.onclick=exportCsv;
+  if(S.view==="documentos")bindDocs();
   const lo=$("#logout");if(lo)lo.onclick=async()=>{await SB.auth.signOut();location.reload()};
   if($("#miemBox"))cargarMiembros();
-  const am=$("#addMiem");if(am)am.onclick=async()=>{const e=$("#nmEmail").value.trim().toLowerCase(),n=$("#nmNombre").value.trim();
+  if($("#cuentasBox"))cargarCuentas();
+  const am=$("#addMiem");if(am)am.onclick=async()=>{const e=$("#nmEmail").value.trim().toLowerCase(),n=$("#nmNombre").value.trim(),tipo="familia";
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){toast("Escribe un correo válido");return}
-    am.disabled=true;const {error}=await SB.from("miembros").upsert({email:e,nombre:n||null});am.disabled=false;
+    am.disabled=true;
+    let error;
+    if(e.endsWith("@habitaciones.argiaetxea.es")){am.disabled=false;toast("Ese es un usuario de habitación");return}
+    ({error}=await SB.from("miembros").upsert({email:e,nombre:n||null}));
+    am.disabled=false;
     if(error)toast("No se pudo añadir: "+error.message);else{toast("Acceso añadido");$("#nmEmail").value="";$("#nmNombre").value="";cargarMiembros()}};
 }
 
@@ -842,7 +855,152 @@ const DOWNLOADS={async save({filename,data}){const u=URL.createObjectURL(data);c
 async function cargarMiembros(){
   const {data}=await SB.from("miembros").select("email,nombre").order("email");
   (data||[]).forEach(r=>S.miembros[r.email]=r.nombre||"");
-  const box=$("#miemBox");if(box)box.innerHTML=(data||[]).map(r=>`<div class="row"><span>${esc(r.nombre||"")}</span><span>${esc(r.email)}</span></div>`).join("")||"Nadie todavía.";
+  const box=$("#miemBox");if(!box)return;
+  const fila=(nombre,email,tipo,tabla)=>`<div class="row"><span><b>${esc(nombre||email.split("@")[0])}</b><br><span class="small muted">${esc(email)} · ${esc(tipo)}</span></span>${email===S.email?'<span class="small muted">tú</span>':`<button class="xbtn" data-quitar="${esc(tabla)}|${esc(email)}" title="Quitar acceso">×</button>`}</div>`;
+  box.classList.remove("muted","small");
+  box.innerHTML=(data||[]).map(r=>fila(r.nombre,r.email,"Familia","miembros")).join("")||'<span class="small muted">Nadie todavía.</span>';
+  box.querySelectorAll("[data-quitar]").forEach(b=>b.onclick=async()=>{
+    if(b.dataset.sure!=="1"){b.dataset.sure="1";b.textContent="¿?";b.style.width="auto";b.style.padding="0 10px";b.title="Toca otra vez para quitar";return}
+    const [t,e]=b.dataset.quitar.split("|");const {error}=await SB.from(t).delete().eq("email",e);
+    if(error)toast("No se pudo quitar: "+error.message);else{toast("Acceso quitado");delete S.miembros[e];cargarMiembros()}});
+}
+
+/* ---------- cuentas de habitación ---------- */
+const DOMINIO_HAB="habitaciones.argiaetxea.es";
+async function llamarCuentas(body){
+  const {data,error}=await SB.functions.invoke("cuentas-habitacion",{body});
+  if(error){let msg=error.message;try{const j=await error.context.json();if(j&&j.error)msg=j.error}catch(_){}throw new Error(msg)}
+  if(data&&data.error)throw new Error(data.error);return data;
+}
+function genPass(){const a="abcdefghjkmnpqrstuvwxyz23456789";let p="";const r=new Uint32Array(10);crypto.getRandomValues(r);r.forEach(x=>p+=a[x%a.length]);return p.slice(0,5)+"-"+p.slice(5)}
+async function cargarCuentas(){
+  const box=$("#cuentasBox");if(!box)return;
+  const {data,error}=await SB.from("inquilinos").select("habitacion,usuario,actualizado_en");
+  if(error){box.textContent="No se pudieron cargar las cuentas.";return}
+  const by=Object.fromEntries((data||[]).map(r=>[r.habitacion,r]));
+  box.classList.remove("muted","small");
+  box.innerHTML=rooms().map(r=>{const c=by[r.id];return `<div class="room" data-cuenta="${esc(r.id)}">
+    <div class="hd"><b style="flex:1">${esc(r.nombre)}${r.inquilino?` <span class="small muted" style="font-weight:400">· ${esc(r.inquilino)}</span>`:""}</b>${c?'<span class="tag" style="background:#e2f0e8;color:#1f5a3f">activa</span>':'<span class="tag" style="background:#eee;color:#777">sin cuenta</span>'}</div>
+    <div class="f2"><div class="f"><label>Usuario</label><input data-k="usuario" autocapitalize="none" autocomplete="off" value="${esc(c?c.usuario:slug(r.nombre).replace(/-/g,""))}"></div>
+    <div class="f"><label>${c?"Contraseña nueva (opcional)":"Contraseña"}</label><div style="display:flex;gap:6px"><input data-k="pass" autocomplete="off" placeholder="${c?"sin cambios":""}"><button class="btn ghost" data-gen style="padding:0 8px" title="Generar">🎲</button></div></div></div>
+    <div class="actions" style="margin-top:4px">${c?`<button class="btn danger" data-quitarc>Quitar cuenta</button>`:""}<button class="btn sec" data-guardarc>${c?"Guardar cambios":"Crear cuenta"}</button></div>
+    <div data-cred></div></div>`}).join("");
+  box.querySelectorAll("[data-cuenta]").forEach(el=>{
+    const id=el.dataset.cuenta,c=by[id];
+    el.querySelector("[data-gen]").onclick=()=>{el.querySelector('[data-k=pass]').value=genPass()};
+    el.querySelector("[data-guardarc]").onclick=async ev=>{
+      const usuario=el.querySelector('[data-k=usuario]').value.trim().toLowerCase(),password=el.querySelector('[data-k=pass]').value.trim();
+      if(!c&&!password){toast("Pon una contraseña o pulsa 🎲");return}
+      const b=ev.target;b.disabled=true;b.innerHTML='<span class="spin"></span>Guardando';
+      try{await llamarCuentas({accion:"guardar",habitacion:id,usuario,password});
+        await cargarCuentas();
+        const nuevo=$(`[data-cuenta="${id}"] [data-cred]`);
+        if(nuevo&&password){const t=`Acceso a Argia Etxea (${roomName(id)})\n${location.origin+location.pathname}\nUsuario: ${usuario}\nContraseña: ${password}`;
+          nuevo.innerHTML=`<div class="notice ok" style="margin-top:10px">Usuario: <b>${esc(usuario)}</b><br>Contraseña: <b>${esc(password)}</b><br><span class="small">Apúntala o cópiala ahora: por seguridad no se vuelve a mostrar.</span></div><button class="btn sec block" data-copy>Copiar para enviar al inquilino</button>`;
+          nuevo.querySelector("[data-copy]").onclick=async()=>{try{await navigator.clipboard.writeText(t);toast("Copiado")}catch(_){toast("No se pudo copiar")}}}
+        else toast("Guardado");
+      }catch(e){b.disabled=false;b.textContent=c?"Guardar cambios":"Crear cuenta";toast(e.message)}};
+    const q=el.querySelector("[data-quitarc]");if(q)q.onclick=async()=>{
+      if(q.dataset.sure!=="1"){q.dataset.sure="1";q.textContent="¿Seguro? Toca otra vez";return}
+      q.disabled=true;try{await llamarCuentas({accion:"quitar",habitacion:id});toast("Cuenta quitada");cargarCuentas()}catch(e){q.disabled=false;toast(e.message)}};
+  });
+}
+
+/* ---------- documentos ---------- */
+const destinoTxt=d=>d==="todas"?"Todas las habitaciones":d==="familia"?"Solo familia":roomName(d);
+const tamTxt=n=>!n?"":n>1048576?(n/1048576).toFixed(1).replace(".",",")+" MB":Math.max(1,Math.round(n/1024))+" KB";
+async function cargarDocs(){
+  const {data,error}=await SB.from("documentos").select("*").order("creado_en",{ascending:false});
+  if(error){S.docs=[];S.docsErr=true;return}
+  S.docsErr=false;S.docs=data||[];
+  if(S.docs.length){const {data:urls}=await SB.storage.from("documentos").createSignedUrls(S.docs.map(d=>d.path),3600);
+    (urls||[]).forEach((u,i)=>{if(S.docs[i])S.docs[i].url=u.signedUrl})}
+}
+function docRow(d,del){const ic=(d.tipo||"").includes("pdf")?"📕":(d.tipo||"").startsWith("image/")?"🖼️":"📄";
+  return `<div class="mov" style="cursor:default"><div class="ic" style="background:var(--accent-soft)">${ic}</div><div class="b"><div class="t">${d.url?`<a href="${esc(d.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(d.titulo)}</a>`:esc(d.titulo)}</div><div class="s">${del?esc(destinoTxt(d.destino))+" · ":""}${esc(new Date(d.creado_en).toLocaleDateString("es-ES"))}${d.tamano?" · "+tamTxt(d.tamano):""}</div></div>${d.url?`<a class="btn sec" href="${esc(d.url)}" target="_blank" rel="noopener" style="padding:8px 12px;min-height:0;text-decoration:none">Abrir</a>`:""}${del?`<button class="xbtn" data-deldoc="${esc(d.id)}" title="Borrar" style="margin-left:6px">×</button>`:""}</div>`}
+function viewDocs(){
+  if(!S.docs){cargarDocs().then(render);return `<div class="empty"><span class="spin"></span>Cargando documentos…</div>`}
+  let h=`<div class="card"><h2>Subir documento</h2>
+   <div class="f"><label>Archivo (PDF, Word, foto…)</label><input type="file" id="dFile"></div>
+   <div class="f"><label>Título</label><input id="dTit" placeholder="Contrato Bardenas 2026, Normas de la casa…"></div>
+   <div class="f"><label>Quién lo puede ver</label><select id="dDest"><option value="todas">Todas las habitaciones</option>${rooms().map(r=>`<option value="${esc(r.id)}">Solo ${esc(r.nombre)}${r.inquilino?" ("+esc(r.inquilino)+")":""}</option>`).join("")}<option value="familia">Solo la familia</option></select></div>
+   <button class="btn block" id="dUp">Subir</button></div>`;
+  if(S.docsErr)h+=`<div class="notice err">No se pudieron cargar los documentos.</div>`;
+  const grupos=["todas",...rooms().map(r=>r.id),"familia"];
+  grupos.forEach(g=>{const ds=(S.docs||[]).filter(d=>d.destino===g);if(!ds.length)return;
+    h+=`<div class="card"><h2>${esc(destinoTxt(g))} <span class="sub">${ds.length}</span></h2>${ds.map(d=>docRow(d,true)).join("")}</div>`});
+  if(!(S.docs||[]).length)h+=`<div class="card empty">Todavía no hay documentos.</div>`;
+  return h;
+}
+function bindDocs(){
+  const f=$("#dFile");if(f)f.onchange=()=>{const x=f.files[0];if(x&&!$("#dTit").value)$("#dTit").value=x.name.replace(/\.[^.]+$/,"")};
+  const up=$("#dUp");if(up)up.onclick=async()=>{
+    const file=f.files[0],titulo=$("#dTit").value.trim(),destino=$("#dDest").value;
+    if(!file){toast("Elige un archivo");return}if(!titulo){toast("Pon un título");return}
+    if(file.size>20*1048576){toast("El archivo pasa de 20 MB");return}
+    up.disabled=true;up.innerHTML='<span class="spin"></span>Subiendo';
+    const ext=((file.name||"").split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,6)||"bin";
+    const path=`${destino}/${crypto.randomUUID?crypto.randomUUID():Date.now()}.${ext}`;
+    const {error:e1}=await SB.storage.from("documentos").upload(path,file,{contentType:file.type||undefined});
+    if(e1){up.disabled=false;up.textContent="Subir";toast("No se pudo subir: "+e1.message);return}
+    const {error:e2}=await SB.from("documentos").insert({titulo,destino,path,tipo:file.type||null,tamano:file.size,creado_por:S.email});
+    if(e2){await SB.storage.from("documentos").remove([path]);up.disabled=false;up.textContent="Subir";toast("No se pudo guardar: "+e2.message);return}
+    toast("Documento subido");await cargarDocs();render()};
+  document.querySelectorAll("[data-deldoc]").forEach(b=>b.onclick=async()=>{
+    if(b.dataset.sure!=="1"){b.dataset.sure="1";b.textContent="¿?";b.style.width="auto";b.style.padding="0 10px";return}
+    const d=S.docs.find(x=>x.id===b.dataset.deldoc);if(!d)return;b.disabled=true;
+    const {error}=await SB.from("documentos").delete().eq("id",d.id);
+    if(error){toast("No se pudo borrar");b.disabled=false;return}
+    await SB.storage.from("documentos").remove([d.path]);toast("Borrado");await cargarDocs();render()});
+}
+
+/* ---------- vista del inquilino ---------- */
+function cargarInquilino(d){
+  S.tenant=d;S.modo="alquiler";S.partesFijas=+d.partes||1;
+  S.config={casa:d.casa,habitaciones:[d.habitacion],partidas:d.partidas||[],reparto:"alquiladas"};rebuildCats();
+  S.movs=(d.movimientos||[]).map(r=>Object.assign({_id:r.id},r.data));S.movsLoaded=S.cfgLoaded=true;
+}
+async function arrancarInquilino(session,d){
+  document.body.classList.remove("out");document.body.classList.add("tenant");
+  S.email=session.user.email;cargarInquilino(d);render();
+  cargarDocs().then(render);
+  if(!S._tenantVis){S._tenantVis=true;document.addEventListener("visibilitychange",async()=>{if(document.visibilityState!=="visible")return;const t=await SB.rpc("datos_inquilino");if(!t.error&&t.data){cargarInquilino(t.data);render()}})}
+}
+function viewTenant(){
+  const d=S.tenant,r=d.habitacion,id=r.id;
+  const per=S.month==="all"?`Año ${S.year}`:`${MESES[S.month-1]} ${S.year}`;
+  const c=cobrosHab(id),g=gastosHab(id),p=pendientesHab(id);
+  let h=`<div class="card"><h2 style="font-size:20px;margin-bottom:4px">Hola${d.nombre?" "+esc(d.nombre):""}</h2>
+    <div class="muted">Habitación <b>${esc(r.nombre)}</b>${d.casa?" · "+esc(d.casa):""}</div>
+    ${cuotaHab(r)?`<div class="small muted" style="margin-top:6px">Tu cuota mensual: ${fmt(cuotaHab(r))} (alquiler ${fmt(r.alquiler)}, consumos ${fmt(r.consumos)}${+r.limpieza?", limpieza "+fmt(r.limpieza):""}${+r.otros?", "+esc((r.otrosConcepto||"otros").toLowerCase())+" "+fmt(r.otros):""})</div>`:""}</div>
+   <div class="kpis" style="grid-template-columns:1fr 1fr"><div class="kpi"><div class="l">Has pagado · ${per}</div><div class="v in">${fmt(c.tot)}</div></div>
+    <div class="kpi"><div class="l">Meses pendientes</div><div class="v ${p.length?"out":"in"}">${p.length}</div></div></div>`;
+  if(p.length)h+=`<div class="notice">Pagos pendientes: ${p.map(ym=>ymLabel(ym)).join(", ")}</div>`;
+  const months=S.month==="all"?[...Array(12).keys()].map(i=>i+1):[S.month];const now=ymNow();
+  h+=`<div class="card"><h2>Tus pagos <span class="sub">${per}</span></h2>`;let any=false;
+  months.forEach(m=>{const ym=S.year+"-"+String(m).padStart(2,"0");
+    const f=S.movs.filter(x=>x.tipo==="ingreso"&&x.habitacion===id&&x.mesCuota===ym);
+    f.forEach(x=>{any=true;const q=x.desglose||{};h+=`<div class="mov" style="cursor:default"><div class="ic i">✓</div><div class="b"><div class="t">${MESES[m-1]}</div><div class="s">Alq. ${fmt(q.alquiler)} · Cons. ${fmt(q.consumos)}${+q.limpieza?" · Limp. "+fmt(q.limpieza):""}${+q.otros?" · "+esc(r.otrosConcepto||"Otros")+" "+fmt(q.otros):""}</div></div><div class="num in" style="font-weight:700">${fmt(x.importe)}</div></div>`});
+    if(!f.length&&p.includes(ym)){any=true;h+=`<div class="mov" style="cursor:default"><div class="ic" style="background:#f3e6c8">!</div><div class="b"><div class="t">${MESES[m-1]}</div><div class="s">Pendiente</div></div><div class="num muted">—</div></div>`}
+  });
+  if(!any)h+=`<div class="small muted">No hay pagos en este periodo.</div>`;
+  h+=`<div class="row" style="margin-top:6px;border-top:2px solid var(--line)"><span>Alquiler ${fmt(c.d.alquiler)} · Consumos ${fmt(c.d.consumos)}${c.d.limpieza?" · Limpieza "+fmt(c.d.limpieza):""}${c.d.otros?" · "+esc(r.otrosConcepto||"Otros")+" "+fmt(c.d.otros):""}</span></div></div>`;
+  if(g.propios.length)h+=`<div class="card"><h2>Gastos de tu habitación <span class="sub">${fmt(g.prop)}</span></h2>`+g.propios.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")).map(m=>{const ci=CATS[m.categoria]||CATS.otros;return `<div class="mov" style="cursor:default"><div class="ic g">${ci[1]}</div><div class="b"><div class="t">${esc(m.proveedor||ci[0])}</div><div class="s">${esc(ci[0])}${m.concepto?" · "+esc(m.concepto):""} · ${esc((m.fecha||"").split("-").reverse().join("/"))}</div></div><div class="num out" style="font-weight:700">${fmt(m.importe)}</div></div>`}).join("")+`</div>`;
+  h+=`<div class="card"><h2>Documentos</h2>${S.docs==null?'<div class="small muted"><span class="spin"></span>Cargando…</div>':S.docs.length?S.docs.map(d=>docRow(d,false)).join(""):'<div class="small muted">No hay documentos.</div>'}</div>`;
+  h+=`<div class="card"><p class="small muted" style="margin-top:0">Usuario: ${esc((S.email||"").replace("@"+DOMINIO_HAB,""))}</p><button class="btn sec block" id="tLogout">Cerrar sesión</button></div>`;
+  return h;
+}
+function bindTenant(){
+  const lo=$("#tLogout");if(lo)lo.onclick=async()=>{await SB.auth.signOut();location.reload()};
+  document.querySelectorAll("[data-tcat]").forEach(b=>b.onclick=()=>{
+    const c=b.dataset.tcat,N=partes();const byM=Array(12).fill(0);const items=[];
+    S.movs.filter(m=>m.tipo==="gasto"&&(m.habitacion||"casa")==="casa"&&((CATS[m.categoria]?m.categoria:"otros")===c)).forEach(m=>{let inY=false;alloc(m).forEach(a=>{if(a.ym&&a.ym.startsWith(S.year+"-")){byM[+a.ym.slice(5,7)-1]+=a.v/N;inY=true}});if(inY)items.push(m)});
+    items.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));const mx=Math.max(1,...byM);
+    const bg=sheet(`<h3><span>${CATS[c][1]} ${esc(CATS[c][0])} · ${S.year}</span><button class="btn ghost" data-x>Cerrar</button></h3>
+     <div class="card"><h2>Tu parte por meses <span class="sub">${fmt(byM.reduce((x,y)=>x+y,0))}</span></h2><div class="bars">${byM.map((v,i)=>`<div class="bar" style="grid-template-columns:44px 1fr 84px"><span class="small">${MES3[i]}</span><div class="t"><i style="width:${v?Math.max(2,v/mx*100):0}%"></i></div><span class="num small" style="text-align:right">${v?fmt(v):"—"}</span></div>`).join("")}</div></div>
+     <div class="card"><h2>Facturas</h2>${items.map(m=>`<div class="row"><span>${esc(m.proveedor||CATS[c][0])}<br><span class="small muted">${esc((m.fecha||"").split("-").reverse().join("/"))}${m.periodoDesde?" · "+esc(m.periodoDesde.split("-").reverse().join("/"))+"–"+esc((m.periodoHasta||"").split("-").reverse().join("/")):""}</span></span><span class="num" style="text-align:right">${fmt(m.importe)}<br><span class="small muted">tu parte ${fmt(m.importe/N)}</span></span></div>`).join("")||'<div class="small muted">Sin facturas.</div>'}</div>`);
+    bg.querySelector("[data-x]").onclick=closeSheet;
+  });
 }
 
 function loginView(msg,modo){
@@ -851,17 +1009,19 @@ function loginView(msg,modo){
   $("#main").innerHTML=`<div class="login"><div class="logo-big">${logo}</div>
    <div class="card"><h2 style="justify-content:center">${modo==="alta"?"Crear cuenta":"Entrar"}</h2>
     ${msg?`<div class="notice">${msg}</div>`:""}
-    <form id="lf"><div class="f"><label>Correo</label><input id="lEmail" type="email" autocomplete="email" required></div>
+    <form id="lf"><div class="f"><label>${modo==="alta"?"Correo":"Usuario o correo"}</label><input id="lEmail" type="${modo==="alta"?"email":"text"}" autocapitalize="none" autocorrect="off" autocomplete="username" required></div>
     <div class="f"><label>Contraseña</label><input id="lPass" type="password" autocomplete="${modo==="alta"?"new-password":"current-password"}" minlength="6" required></div>
     <button class="btn block" id="lBtn">${modo==="alta"?"Crear cuenta":"Entrar"}</button></form>
-    <button class="btn ghost block" id="lAlt" style="margin-top:8px">${modo==="alta"?"Ya tengo cuenta: entrar":"Primera vez: crear cuenta"}</button>
+    <button class="btn ghost block" id="lAlt" style="margin-top:8px">${modo==="alta"?"Ya tengo cuenta: entrar":"Familia: crear cuenta"}</button>
     ${modo==="alta"?"":`<button class="btn ghost block" id="lOlv">He olvidado la contraseña</button>`}</div></div>`;
   $("#lAlt").onclick=()=>loginView("",modo==="alta"?"entrar":"alta");
   const ol=$("#lOlv");if(ol)ol.onclick=async()=>{const e=$("#lEmail").value.trim();if(!e){toast("Escribe primero tu correo");return}
+    if(!e.includes("@")){loginView("Si entras con un usuario de habitación, pide a la familia que te ponga una contraseña nueva.","entrar");return}
     const {error}=await SB.auth.resetPasswordForEmail(e,{redirectTo:location.origin+location.pathname});
     loginView(error?"No se pudo enviar: "+esc(error.message):"Te hemos enviado un correo para cambiar la contraseña.","entrar")};
   $("#lf").onsubmit=async ev=>{ev.preventDefault();const b=$("#lBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>Un momento';
-    const email=$("#lEmail").value.trim(),password=$("#lPass").value;
+    let email=$("#lEmail").value.trim().toLowerCase();const password=$("#lPass").value;
+    if(modo!=="alta"&&!email.includes("@"))email=email+"@"+DOMINIO_HAB;
     if(modo==="alta"){const {data,error}=await SB.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});
       if(error)return loginView(esc(traducirError(error.message)),"alta");
       if(!data.session)return loginView("Cuenta creada. Revisa tu correo y pulsa el enlace de confirmación; después vuelve aquí y entra.","entrar");
@@ -882,6 +1042,7 @@ async function arrancar(){
   // nueva contraseña tras el enlace de recuperación
   let {data:ok,error}=await SB.rpc("es_miembro");
   if(!error&&!ok){const r=await SB.rpc("reclamar_primer_acceso");if(r.data===true)ok=true}
+  if(!error&&!ok){const t=await SB.rpc("datos_inquilino");if(!t.error&&t.data){return arrancarInquilino(session,t.data)}}
   if(error||!ok){document.body.classList.add("out");
     $("#main").innerHTML=`<div class="login"><div class="card"><h2>Sin acceso todavía</h2><p>Has entrado como <b>${esc(session.user.email)}</b>, pero esta cuenta aún no tiene acceso a la aplicación. Pide a quien la administra que añada tu correo en Casa → Personas con acceso.</p><button class="btn sec block" id="lo2">Cerrar sesión</button></div></div>`;
     $("#lo2").onclick=async()=>{await SB.auth.signOut();location.reload()};return}
