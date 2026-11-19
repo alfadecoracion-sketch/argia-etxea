@@ -307,9 +307,9 @@ function viewResumen(){
   }else{
    const d=reparto();const mxh=Math.max(1,...d.rows.map(r=>r.total),d.resto);
    h+=`<div class="bars">${d.rows.map(r=>`<div class="bar" data-hab="${esc(r.id)}" style="cursor:pointer"><span>${esc(r.nombre)}</span><div class="t"><i style="width:${r.total?Math.max(2,r.total/mxh*100):0}%"></i></div><b class="num" style="text-align:right">${fmt(r.total)} ›</b></div>`).join("")}
-    ${d.resto>0.005?`<div class="bar"><span class="muted">Resto de la casa</span><div class="t"><i style="width:${d.resto?Math.max(2,d.resto/mxh*100):0}%;background:#bbb"></i></div><b class="num muted" style="text-align:right">${fmt(d.resto)}</b></div>`:""}</div>
+    ${d.resto>0.005?`<div class="bar"><span class="muted">${repartoPersonas()?"Familia":"Resto de la casa"}</span><div class="t"><i style="width:${d.resto?Math.max(2,d.resto/mxh*100):0}%;background:#bbb"></i></div><b class="num muted" style="text-align:right">${fmt(d.resto)}</b></div>`:""}</div>
     <div class="row" style="margin-top:8px;border-top:2px solid var(--line)"><b>Total gastos</b><b class="num out">${fmt(totG)}</b></div>
-    <div class="small muted" style="margin-top:6px">Cada habitación alquilada lleva sus gastos propios más 1/${d.partes} de los gastos comunes (reparto entre ${partesTxt()}).${repartoPersonas()?' "Resto" es la parte de la familia.':' Las habitaciones sin alquilar solo llevan sus gastos propios.'}</div>`;
+    <div class="small muted" style="margin-top:6px">Cada habitación alquilada lleva sus gastos propios más 1/${d.partes} de los gastos comunes (reparto entre ${partesTxt()}).${repartoPersonas()?' "Familia" es vuestra parte.':' Las habitaciones sin alquilar solo llevan sus gastos propios.'}</div>`;
   }
   h+=`</div>`;
   return h;
@@ -319,7 +319,7 @@ function viewResumen(){
 const repartoPersonas=()=>cfg().reparto==="personas";
 const habsReparto=()=>rooms().filter(r=>r.activa!==false);
 function partes(){if(S.partesFijas)return S.partesFijas;return repartoPersonas()?Math.max(1,+cfg().personasReparto||1):Math.max(1,habsReparto().length)}
-const partesTxt=()=>repartoPersonas()?`las ${partes()} personas de la casa`:`las ${partes()} habitaciones alquiladas`;
+const partesTxt=()=>repartoPersonas()?`${partes()} partes: cada habitación alquilada y la familia`:`las ${partes()} habitaciones alquiladas`;
 function gastosHab(id){
   // gastos del periodo: propios de la habitación + su parte de los comunes
   const total=S.modo==="total";const N=partes();
@@ -479,8 +479,8 @@ function viewAjustes(){
   const c=cfg();const ro=S.canWrite===false?"disabled":"";
   let h=`<div class="card"><h2>La casa</h2>
    <div class="f2"><div class="f"><label>Nombre / dirección</label><input id="cCasa" value="${esc(c.casa||"")}" ${ro}></div>
-   <div class="f"><label>Personas que viven en la casa</label><input id="cPers" inputmode="numeric" value="${esc(c.personasReparto||"")}" ${ro}></div></div>
-   <div class="f"><label>Repartir los gastos comunes entre</label><select id="cRep" ${ro}><option value="alquiladas" ${c.reparto!=="personas"?"selected":""}>Las habitaciones alquiladas</option><option value="personas" ${c.reparto==="personas"?"selected":""}>Todas las personas de la casa (la familia también paga su parte)</option></select></div></div>
+   <div class="f"><label>Partes del reparto (habitaciones + familia)</label><input id="cPers" inputmode="numeric" value="${esc(c.personasReparto||"")}" ${ro}></div></div>
+   <div class="f"><label>Repartir los gastos comunes entre</label><select id="cRep" ${ro}><option value="alquiladas" ${c.reparto!=="personas"?"selected":""}>Las habitaciones alquiladas</option><option value="personas" ${c.reparto==="personas"?"selected":""}>Las habitaciones alquiladas y la familia (cada una, una parte)</option></select></div></div>
    <div class="card"><h2>Habitaciones y cuotas mensuales</h2><div id="roomsBox">`;
   rooms().forEach((r,i)=>h+=roomEditor(r,i,ro));
   h+=`</div>${ro?"":`<button class="btn sec block" id="addRoom">+ Añadir habitación</button>`}</div>`;
