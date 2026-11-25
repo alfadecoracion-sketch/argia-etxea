@@ -277,6 +277,7 @@ function viewResumen(){
    <div class="kpi"><div class="l">Ingresos</div><div class="v in">${fmt(t.ing)}</div></div>
    <div class="kpi"><div class="l">Gastos</div><div class="v out">${fmt(gas)}</div></div>
    <div class="kpi"><div class="l">Resultado</div><div class="v ${res>=0?"in":"out"}">${fmt(res)}</div></div></div>`;
+  h+=`<button class="btn sec block" data-an="prev" style="margin-bottom:14px">📈 Previsión ${S.year+1}: suministros, resultado y sugerencias</button>`;
   h+=`<div class="card"><h2 data-an="casa" style="cursor:pointer">Con y sin gastos de la casa <span class="sub">${per} · ver análisis ›</span></h2>
    <div class="row"><span>Resultado solo con gastos del alquiler</span><b class="num ${resA>=0?"in":"out"}">${fmt(resA)}</b></div>
    <div class="row" data-cat="__casa" style="cursor:pointer"><span>Gastos de la casa <span class="small muted">(hipoteca, seguros, contribución…)</span></span><b class="num out">−${fmt(t.gasC)} ›</b></div>
@@ -528,7 +529,7 @@ function openHab(id){S.view="habitaciones";S.hab=id;syncTabs();render();window.s
 function bindView(){
   document.querySelectorAll("[data-tipo]").forEach(b=>b.onclick=()=>{S.tipo=b.dataset.tipo;render()});
   document.querySelectorAll("[data-hab]").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();openHab(b.dataset.hab)});
-  document.querySelectorAll("[data-an]").forEach(b=>b.onclick=e=>{e.stopPropagation();b.dataset.an==="sum"?openAnSum():openAnCasa()});
+  document.querySelectorAll("[data-an]").forEach(b=>b.onclick=e=>{e.stopPropagation();const k=b.dataset.an;k==="sum"?openAnSum():k==="prev"?openPrev():openAnCasa()});
   document.querySelectorAll("[data-pv]").forEach(b=>b.onclick=()=>{S.partVista=b.dataset.pv;render()});
   const bk=document.querySelector("[data-back]");if(bk)bk.onclick=()=>{S.hab=null;render();window.scrollTo(0,0)};
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{S.view=b.dataset.goto;S.hab=null;syncTabs();render();window.scrollTo(0,0)});
@@ -683,6 +684,105 @@ function openAnSum(){
     <div class="card"><h2>Desviación mes a mes</h2>${tabla(["Mes","Gasto","Le toca",...hs.map(x=>esc(x.r.nombre))],q.filas.map(f=>[MES3[f.m-1],fmt(f.g),fmt(f.p),...f.hs.map(h=>sgn(h.c-f.p))]))}</div>`:`<div class="card small muted">Aún no hay ningún mes con todas las facturas de suministros apuntadas.</div>`}
    <div class="card"><h2>Por suministro</h2>${tabla(["Suministro","Coste"],["luz","gas","agua","internet"].map(c=>[CATS[c][1]+" "+esc(CATS[c][0]),fmt(t.cat[c]||0)]))}</div>`);
   bg.querySelector("[data-x]").onclick=closeSheet;
+}
+
+/* ---- previsión del año siguiente ---- */
+const PREV_DEF={luz:{bajo:10,base:25,alto:45},gas:{bajo:15,base:30,alto:50},agua:{bajo:3.2,base:3.2,alto:3.2},internet:{bajo:0,base:3.7,alto:5},irav:2.57,ipc:3.7,
+  fuentes:[
+   ["Luz: futuros OMIP 2027 a 131–134,5 €/MWh (oct.–nov. 2026); mayorista de oct. 2026 a 166,65 €/MWh","https://www.sparkanda.com/es/blog/prevision-precio-luz-invierno"],
+   ["Luz: evolución del mercado mayorista y futuros","https://zairabovino.es/precio-fijo-o-indexado-2027/"],
+   ["Gas: MIBGAS, futuro año 2027 a 68,48 €/MWh y 1.er trimestre 2027 a 84,88 €/MWh","https://www.mibgas.es/"],
+   ["Gas: TUR de enero de 2027 con tope del 15 % a la materia prima y recuperación de la deuda","https://www.que.es/2026/11/25/factura-gas-6000-millones-tur-enero/"],
+   ["Agua: la Mancomunidad aprueba +3,2 % para 2027","https://navarra.okdiario.com/articulo/pamplona/nuevo-golpe-bolsillo-pamplona-suben-agua-basuras-taxis-villavesas-partir-proximo-ano/20261014164451663838.html"],
+   ["IPC: Banco de España, inflación del 3,7 % en 2027 (15 oct. 2026)","https://www.bde.es/f/webbe/GAP/Secciones/SalaPrensa/NotasInformativas/26/presbe2026-94.pdf"],
+   ["Alquiler: IRAV de octubre de 2026, 2,57 %","https://www.raisin.com/es-es/noticias/irav-octubre-2026-subida-alquiler-record/"]]};
+const SUMI=["luz","gas","agua","internet"];
+function prevCfg(){const p=(cfg().prevision)||{};const o=JSON.parse(JSON.stringify(PREV_DEF));
+  SUMI.forEach(c=>{if(p[c])["bajo","base","alto"].forEach(k=>{if(p[c][k]!=null&&!isNaN(+p[c][k]))o[c][k]=+p[c][k]})});
+  if(p.irav!=null&&!isNaN(+p.irav))o.irav=+p.irav;return o}
+function baseSuministros(year){
+  // gasto mensual del año base por suministro; los meses sin factura se estiman
+  const now=new Date(),lim=year<now.getFullYear()?12:now.getMonth()+1;
+  const out={};
+  SUMI.forEach(c=>{const v=Array(12).fill(0),cov=Array(12).fill(false);
+    S.movs.forEach(m=>{if(m.tipo==="gasto"&&m.categoria===c)alloc(m).forEach(a=>{if(a.ym&&a.ym.startsWith(year+"-")){const i=+a.ym.slice(5,7)-1;v[i]+=a.v;cov[i]=true}})});
+    const inv=[0,1,2,3,10,11];const covIdx=v.map((x,i)=>i).filter(i=>cov[i]);
+    const avg=ids=>ids.length?ids.reduce((s,i)=>s+v[i],0)/ids.length:0;
+    const est=Array(12).fill(false);
+    for(let i=0;i<12;i++){if(cov[i])continue;est[i]=true;
+      if(c==="gas"){const same=covIdx.filter(j=>inv.includes(j)===inv.includes(i));v[i]=avg(same.length?same:covIdx)}else v[i]=avg(covIdx)}
+    out[c]={v,est,real:v.reduce((s,x,i)=>s+(est[i]?0:x),0),total:v.reduce((s,x)=>s+x,0),nEst:est.filter(Boolean).length};
+  });
+  return out;
+}
+function gastosCasaPrev(year){
+  // proyección anual de los gastos de la casa a partir de lo último apuntado
+  const res={};const now=new Date();const ultimo=year<now.getFullYear()?12:now.getMonth()+1;
+  Object.keys(CATS).filter(c=>CATS[c][3]).forEach(c=>{
+    const ms=S.movs.filter(m=>m.tipo==="gasto"&&m.categoria===c);if(!ms.length)return;
+    const anual=ms.filter(m=>m.periodoDesde&&m.periodoHasta&&(Date.parse(m.periodoHasta)-Date.parse(m.periodoDesde))/864e5>300&&m.periodoDesde.startsWith(year+""));
+    if(anual.length){res[c]=anual.reduce((s,m)=>s+(+m.importe||0),0);return}
+    const byM=Array(12).fill(0);ms.forEach(m=>alloc(m).forEach(a=>{if(a.ym&&a.ym.startsWith(year+"-"))byM[+a.ym.slice(5,7)-1]+=a.v}));
+    let k=-1;for(let i=ultimo-1;i>=0;i--){if(byM[i]>0.5){k=i;break}}
+    res[c]=(k>=ultimo-2)?byM[k]*12:0;
+  });
+  return res;
+}
+function calcPrev(){
+  const y0=S.year,P=prevCfg(),B=baseSuministros(y0),N=partes(),habs=rooms().filter(r=>r.activa!==false),fh=fracHabs();
+  const baseTot=SUMI.reduce((s,c)=>s+B[c].total,0);
+  const esc={};["bajo","base","alto"].forEach(k=>{const por={};SUMI.forEach(c=>por[c]=B[c].total*(1+P[c][k]/100));const tot=SUMI.reduce((s,c)=>s+por[c],0);
+    const mes=Array(12).fill(0).map((_,i)=>SUMI.reduce((s,c)=>s+B[c].v[i]*(1+P[c][k]/100),0));esc[k]={por,tot,mes}});
+  const cuota=r=>(+r.alquiler||0)+(+r.consumos||0)+(+r.limpieza||0)+(+r.otros||0);
+  const ingMes=habs.reduce((s,r)=>s+cuota(r),0),ing=ingMes*12,consMes=habs.reduce((s,r)=>s+(+r.consumos||0),0),alqMes=habs.reduce((s,r)=>s+(+r.alquiler||0),0);
+  const casa=gastosCasaPrev(y0),casaTot=Object.values(casa).reduce((s,x)=>s+x,0);
+  Object.keys(esc).forEach(k=>{const e=esc[k];e.caja=ing-e.tot-casaTot;e.alq=ing-fh*(e.tot+casaTot);e.parteHab=e.tot*fh;e.consDif=consMes*12-e.parteHab;e.justa=e.tot/N/12});
+  return {y0,y1:y0+1,P,B,N,habs,fh,baseTot,esc,ing,ingMes,consMes,alqMes,casa,casaTot};
+}
+function openPrev(){
+  const R=calcPrev(),P=R.P,E=R.esc,b=E.base;const ro=S.canWrite===false;
+  const pct=v=>(v>0?"+":"")+String(Math.round(v*10)/10).replace(".",",")+" %";
+  const nEst=SUMI.reduce((s,c)=>s+R.B[c].nEst,0);
+  // sugerencias
+  const sug=[];const ceil5=v=>Math.ceil(v/5)*5;
+  const justa=b.justa,justaAlto=E.alto.justa;
+  const bajas=R.habs.filter(r=>(+r.consumos||0)<justa-0.5),altas=R.habs.filter(r=>(+r.consumos||0)>justaAlto*1.15);
+  if(!bajas.length)sug.push(`<b>Consumos: se pueden dejar como están.</b> Todas las cuotas cubren el escenario base (${fmt(justa)} al mes por habitación).`);
+  else{const nueva=ceil5(justa);const extra=bajas.reduce((s,r)=>s+(nueva-(+r.consumos||0)),0)*12;
+    sug.push(`<b>Consumos: subir ${bajas.map(r=>esc(r.nombre)).join(" y ")} de ${bajas.map(r=>fmt(r.consumos)).join(" / ")} a ${fmt(nueva)} al mes.</b> La cuota justa prevista es de ${fmt(justa)} al mes en el escenario base (${fmt(justaAlto)} en el alto). Supone +${fmt(extra)} al año.`)}
+  altas.forEach(r=>sug.push(`<b>${esc(r.nombre)}</b> paga ${fmt(r.consumos)} de consumos, por encima incluso del escenario alto (${fmt(justaAlto)}). Si no hay un motivo (habitación más grande, más consumo), se podría igualar.`));
+  const iravMes=R.alqMes*P.irav/100;
+  sug.push(`<b>Alquiler: actualizar con el IRAV (${String(P.irav).replace(".",",")} %)</b> en el aniversario de cada contrato: unos +${fmt(iravMes)} al mes entre las tres, +${fmt(iravMes*12)} al año. Comprobad la cláusula de actualización de cada contrato antes de aplicarlo.`);
+  const conSug=b.caja+(bajas.length?bajas.reduce((s,r)=>s+(ceil5(justa)-(+r.consumos||0)),0)*12:0)+iravMes*12;
+  sug.push(`Con las dos medidas, el resultado de caja del escenario base pasaría de <b>${sgn(b.caja)}</b> a <b>${sgn(conSug)}</b> al año.`);
+  sug.push(`<b>Revisad la previsión en abril</b>, con las facturas reales del primer trimestre: es cuando más pesa el gas y cuando más subida esperan los mercados.`);
+  if(E.alto.caja<0)sug.push(`En el escenario alto la casa cerraría en ${sgn(E.alto.caja)}. Si la luz es de precio indexado, valorad pasarla a precio fijo antes del invierno.`);
+  const filasEsc=[["Luz",...["bajo","base","alto"].map(k=>fmt(E[k].por.luz))],["Gas",...["bajo","base","alto"].map(k=>fmt(E[k].por.gas))],["Agua",...["bajo","base","alto"].map(k=>fmt(E[k].por.agua))],["Internet",...["bajo","base","alto"].map(k=>fmt(E[k].por.internet))],
+    ["<b>Suministros</b>",...["bajo","base","alto"].map(k=>`<b>${fmt(E[k].tot)}</b> <span class="small muted">(${pct((E[k].tot/R.baseTot-1)*100)})</span>`)],
+    ["Cuota justa de consumos",...["bajo","base","alto"].map(k=>fmt(E[k].justa)+"/mes")],
+    ["Consumos cobrados − parte habitaciones",...["bajo","base","alto"].map(k=>sgn(E[k].consDif))],
+    ["Cobros a las cuotas actuales",...["bajo","base","alto"].map(()=>fmt(R.ing))],
+    ["Gastos de la casa",...["bajo","base","alto"].map(()=>"−"+fmt(R.casaTot))],
+    ["<b>Resultado de caja</b>",...["bajo","base","alto"].map(k=>"<b>"+sgn(E[k].caja)+"</b>")],
+    [`Resultado del alquiler (${R.habs.length}/${R.N})`,...["bajo","base","alto"].map(k=>sgn(E[k].alq))]];
+  const inp=(c,k)=>`<input data-pc="${c}.${k}" inputmode="decimal" value="${String(P[c][k]).replace(".",",")}" style="width:64px;min-height:34px;padding:4px 6px;text-align:right" ${ro?"disabled":""}>`;
+  const bg=sheet(`<h3><span>📈 Previsión ${R.y1}</span><button class="btn ghost" data-x>Cerrar</button></h3>
+   <div class="card"><p style="margin-top:0;font-size:15px;line-height:1.45"><b>En el escenario base, los suministros pasarían de ${fmt(R.baseTot)} a ${fmt(b.tot)} (${pct((b.tot/R.baseTot-1)*100)}) y la casa cerraría ${R.y1} en ${sgn(b.caja)} de caja.</b> La subida viene sobre todo del gas y de la luz: los mercados de futuros cotizan ${R.y1} muy por encima de la primera mitad de ${R.y0}.</p>
+   <p class="small muted" style="margin-bottom:0">Año base: el gasto de ${R.y0}${nEst?`, con ${nEst} meses-suministro sin factura estimados con la media (el gas, con la media de los meses de su misma estación)`:""}. Ingresos a las cuotas actuales durante los 12 meses.</p></div>
+   <div class="card"><h2>Escenarios ${R.y1}</h2>${tabla(["","Bajo","Base","Alto"],filasEsc)}</div>
+   <div class="card"><h2>Qué os sugiero</h2>${sug.map(x=>`<p style="margin:0 0 10px;font-size:14px;line-height:1.45">• ${x}</p>`).join("")}</div>
+   <div class="card"><h2>Mes a mes, escenario base</h2>${tabla(["Mes",`${R.y0}`,`${R.y1} previsto`,"Cuota justa"],R.B.luz.v.map((_,i)=>[MES3[i]+(SUMI.some(c=>R.B[c].est[i])?" *":""),fmt(SUMI.reduce((s,c)=>s+R.B[c].v[i],0)),fmt(b.mes[i]),fmt(b.mes[i]/R.N)]))}<p class="small muted" style="margin-bottom:0">* mes con alguna factura estimada. Cuota justa: lo que le toca a cada parte del reparto (÷${R.N}).</p></div>
+   <div class="card"><h2>Supuestos de subida de precios</h2>
+    ${tabla(["Suministro","Bajo","Base","Alto"],SUMI.map(c=>[CATS[c][1]+" "+esc(CATS[c][0].split(" ")[0]),inp(c,"bajo"),inp(c,"base"),inp(c,"alto")]))}
+    <div class="row"><span>Actualización de alquiler (IRAV)</span><span><input data-pc="irav" inputmode="decimal" value="${String(P.irav).replace(".",",")}" style="width:64px;min-height:34px;padding:4px 6px;text-align:right" ${ro?"disabled":""}> %</span></div>
+    ${ro?"":`<div class="actions"><button class="btn sec" data-reset>Valores por defecto</button><button class="btn" data-savep>Guardar y recalcular</button></div>`}
+    <p class="small muted">Porcentajes sobre lo pagado en ${R.y0}. Se guardan para toda la familia.</p></div>
+   <div class="card"><h2>Fuentes</h2>${PREV_DEF.fuentes.map(f=>`<div class="row small"><a href="${esc(f[1])}" target="_blank" rel="noopener" style="color:inherit">${esc(f[0])}</a></div>`).join("")}<p class="small muted" style="margin-bottom:0">Las previsiones de mercado cambian a diario; las cifras son orientativas.</p></div>`);
+  bg.querySelector("[data-x]").onclick=closeSheet;
+  const sv=bg.querySelector("[data-savep]");if(sv)sv.onclick=async()=>{
+    const p={};bg.querySelectorAll("[data-pc]").forEach(i=>{const k=i.dataset.pc,v=num(i.value);if(k==="irav")p.irav=v;else{const [c,e]=k.split(".");(p[c]=p[c]||{})[e]=v}});
+    sv.disabled=true;try{await S.db.doc("config/main").set(Object.assign({},cfg(),{prevision:p}));toast("Supuestos guardados");setTimeout(openPrev,300)}catch(e){sv.disabled=false;toast(errMsg(e))}};
+  const rs=bg.querySelector("[data-reset]");if(rs)rs.onclick=async()=>{const c=Object.assign({},cfg());delete c.prevision;rs.disabled=true;try{await S.db.doc("config/main").set(c);toast("Valores por defecto");setTimeout(openPrev,300)}catch(e){rs.disabled=false;toast(errMsg(e))}};
 }
 
 function openAnCasa(){
