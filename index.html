@@ -284,12 +284,13 @@ function viewResumen(){
    ${t.ing&&t.gasC?`<div class="small muted" style="margin-top:8px">Lo que deja el alquiler cubre el ${Math.round(Math.max(0,resA)/t.gasC*100)}% de los gastos de la casa.</div>`:""}
    <button class="btn sec block" style="margin-top:10px" data-an="casa">Ver por qué sale este resultado</button></div>`;
   h+=cobrosCard();
-  const dif=t.cons-t.sumi;const falt=faltanFacturas();
+  const fh=fracHabs(),parteH=t.sumi*fh,dif=t.cons-parteH;const falt=faltanFacturas();
   h+=`<div class="card" data-an="sum" style="cursor:pointer"><h2>Suministros <span class="sub">${per} · ver análisis ›</span></h2>
    <div class="row"><span>Coste real (luz, gas, agua, internet)</span><b class="num out">${fmt(t.sumi)}</b></div>
    <div class="row"><span>Parte de cada habitación (÷${partes()})</span><b class="num">${fmt(t.sumi/partes())}</b></div>
    <div class="row"><span>Cuotas de consumos cobradas</span><b class="num in">${fmt(t.cons)}</b></div>
-   <div class="row"><span>${dif>=0?"Las cuotas cubren el coste con":"Faltan para cubrir el coste"}</span><b class="num ${dif>=0?"in":"out"}">${fmt(Math.abs(dif))}</b></div>
+   ${fh<1?`<div class="row"><span>Parte de las habitaciones (${habsReparto().length}/${partes()})</span><b class="num">${fmt(parteH)}</b></div>`:""}
+   <div class="row"><span>${dif>=0?"Las cuotas cubren su parte con":"Faltan para cubrir su parte"}</span><b class="num ${dif>=0?"in":"out"}">${fmt(Math.abs(dif))}</b></div>
    ${falt.length?`<div class="notice" style="margin:10px 0 0">Faltan facturas por apuntar: ${esc(falt.map(f=>f.txt).join("; "))}. Hasta entonces el coste sale más bajo de lo real.</div>`:""}
    <div class="small muted" style="margin-top:8px">Las facturas con periodo (p. ej. gas bimestral) se reparten entre los meses que cubren.</div></div>`;
   h+=`<div class="card"><h2>Mes a mes <span class="sub">${S.year}</span></h2>${chart(t.byM,total)}
@@ -635,26 +636,51 @@ function porMes(){
 const sgn=v=>`<span class="num ${v>=0?"in":"out"}">${v>=0?"+":"−"}${fmt(Math.abs(v))}</span>`;
 function tabla(head,rows,foot){return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr>${head.map((x,i)=>`<th style="text-align:${i?"right":"left"};color:var(--muted);font-weight:500;padding:6px 4px;border-bottom:1px solid var(--line)">${x}</th>`).join("")}</tr>${rows.map(r=>`<tr>${r.map((x,i)=>`<td style="text-align:${i?"right":"left"};padding:6px 4px;border-bottom:1px solid var(--line);white-space:nowrap">${x}</td>`).join("")}</tr>`).join("")}${foot?`<tr>${foot.map((x,i)=>`<td style="text-align:${i?"right":"left"};padding:8px 4px;font-weight:700">${x}</td>`).join("")}</tr>`:""}</table></div>`}
 
+const fracHabs=()=>repartoPersonas()?Math.min(1,habsReparto().length/partes()):1;
+function mesesCompletos(){
+  const ms=mesesHasta(),cats=["luz","gas","agua","internet"],cov={};
+  S.movs.forEach(m=>{if(m.tipo==="gasto"&&cats.includes(m.categoria))alloc(m).forEach(a=>{if(a.ym&&a.ym.startsWith(S.year+"-")){(cov[m.categoria]=cov[m.categoria]||new Set()).add(+a.ym.slice(5,7))}})});
+  const used=cats.filter(c=>cov[c]);if(!used.length)return [];
+  return ms.filter(m=>used.every(c=>cov[c].has(m)));
+}
+function analisisCuotas(){
+  const N=partes(),comp=mesesCompletos(),M=porMes(),habs=rooms().filter(r=>r.activa!==false);
+  const pag=(id,m)=>{const ym=S.year+"-"+String(m).padStart(2,"0");let c=0;S.movs.forEach(x=>{if(x.tipo==="ingreso"&&x.habitacion===id&&x.mesCuota===ym)c+=+((x.desglose||{}).consumos)||0});return c};
+  const filas=comp.map(m=>{const g=M[m-1].sumi;return {m,g,p:g/N,hs:habs.map(r=>({r,c:pag(r.id,m)}))}});
+  const tot=filas.reduce((s,f)=>s+f.g,0),parte=tot/N;
+  const porHab=habs.map(r=>{const c=filas.reduce((s,f)=>s+pag(r.id,f.m),0);return {r,c,d:c-parte}});
+  const avg=a=>a.length?a.reduce((s,f)=>s+f.p,0)/a.length:0;
+  const inv=filas.filter(f=>[1,2,3,4,11,12].includes(f.m)),ver=filas.filter(f=>[6,7,8,9].includes(f.m));
+  return {N,comp,filas,tot,parte,porHab,media:filas.length?parte/filas.length:0,inv:avg(inv),ver:avg(ver),nInv:inv.length,nVer:ver.length};
+}
 function openAnSum(){
   const t=totals();const M=porMes();const ms=S.month==="all"?[...Array(12).keys()]:[S.month-1];
-  const rows=ms.filter(i=>M[i].sumi||M[i].cons).map(i=>[MES3[i],fmt(M[i].sumi),fmt(M[i].cons),sgn(M[i].cons-M[i].sumi)]);
-  const dif=t.cons-t.sumi;const N=partes();const parte=t.sumi/N;
-  const hs=rooms().filter(r=>r.activa!==false).map(r=>{let c=0;S.movs.forEach(m=>{if(m.tipo==="ingreso"&&m.habitacion===r.id&&inPeriod(m.mesCuota))c+=+((m.desglose||{}).consumos)||0});return {r,c,d:c-parte}});
+  const fh=fracHabs();
+  const rows=ms.filter(i=>M[i].sumi||M[i].cons).map(i=>fh<1?[MES3[i],fmt(M[i].sumi),fmt(M[i].sumi*fh),fmt(M[i].cons),sgn(M[i].cons-M[i].sumi*fh)]:[MES3[i],fmt(M[i].sumi),fmt(M[i].cons),sgn(M[i].cons-M[i].sumi)]);
+  const dif=t.cons-t.sumi*fh;const N=partes();const parte=t.sumi/N;
+  const q=analisisCuotas();const hs=q.porHab;
   const falt=faltanFacturas();
   // explicaciones automáticas
   const ex=[];
   if(falt.length)ex.push(`<b>Faltan facturas por apuntar</b> (${esc(falt.map(f=>f.txt).join("; "))}). Los consumos de esos meses ya se han cobrado pero su coste aún no está, así que esos meses salen a favor y el total no es definitivo.`);
-  const malos=ms.filter(i=>M[i].sumi&&M[i].cons-M[i].sumi<0);
-  if(malos.length){const tot=malos.reduce((x,i)=>x+M[i].sumi-M[i].cons,0);ex.push(`<b>En ${malos.map(i=>MES3[i].toLowerCase()).join(", ")} el coste superó a las cuotas</b> en ${fmt(tot)} en total (sobre todo por la calefacción de gas en invierno). En los meses de verano las cuotas sobran y compensan una parte.`)}
+  const malos=ms.filter(i=>M[i].sumi&&M[i].cons-M[i].sumi*fh<0);
+  if(malos.length){const tot=malos.reduce((x,i)=>x+M[i].sumi*fh-M[i].cons,0);ex.push(`<b>En ${malos.map(i=>MES3[i].toLowerCase()).join(", ")} el coste${fh<1?" que les toca a las habitaciones":""} superó a las cuotas</b> en ${fmt(tot)} en total (sobre todo por la calefacción de gas en invierno). En los meses de verano las cuotas sobran y compensan una parte.`)}
   const bajos=hs.filter(x=>x.d<0).sort((a,b)=>a.d-b.d);
-  bajos.forEach(x=>{const cu=+x.r.consumos||0;ex.push(`<b>${esc(x.r.nombre)}</b> ha pagado ${fmt(x.c)} de consumos y su parte del coste (1/${N}) es ${fmt(parte)}: aporta ${fmt(-x.d)} menos de lo que gasta.${cu&&x.c<cu*mesesHasta().length*0.8?" Ha estado pagando una cuota de consumos más baja que la actual ("+fmt(cu)+"/mes) durante parte del periodo.":""}`)});
+  bajos.forEach(x=>{const cu=+x.r.consumos||0;ex.push(`<b>${esc(x.r.nombre)}</b> ha pagado ${fmt(x.c)} de consumos en los meses con todas las facturas y su parte del coste (1/${N}) es ${fmt(q.parte)}: aporta ${fmt(-x.d)} menos de lo que le toca.${cu&&x.c<cu*q.filas.length*0.8?" Ha estado pagando una cuota de consumos más baja que la actual ("+fmt(cu)+"/mes) durante parte del periodo.":""}`)});
   hs.filter(x=>x.d>0).forEach(x=>ex.push(`<b>${esc(x.r.nombre)}</b> paga ${fmt(x.d)} más de su parte, lo que compensa a las demás.`));
-  if(N&&mesesHasta().length){const mm=mesesHasta().length;ex.push(`Para cubrir el coste real hasta ahora, la cuota media de consumos debería ser de unos <b>${fmt(t.sumi/mm/N)}</b> al mes por habitación.`)}
+  if(q.filas.length)ex.push(`Para cubrir el coste real, la cuota media de consumos debería ser de unos <b>${fmt(q.media)}</b> al mes por habitación${q.nInv&&q.nVer?` (unos ${fmt(q.inv)} en los meses fríos y ${fmt(q.ver)} en verano)`:""}.`);
   const bg=sheet(`<h3><span>💡 Análisis de suministros</span><button class="btn ghost" data-x>Cerrar</button></h3>
-   <div class="card"><div class="row"><span>Coste real</span><b class="num out">${fmt(t.sumi)}</b></div><div class="row"><span>Cuotas de consumos cobradas</span><b class="num in">${fmt(t.cons)}</b></div><div class="row"><b>Diferencia</b>${sgn(dif)}</div></div>
+   <div class="card"><div class="row"><span>Coste real (toda la casa)</span><b class="num out">${fmt(t.sumi)}</b></div>${fh<1?`<div class="row"><span>Parte de las habitaciones (${habsReparto().length}/${partes()})</span><b class="num">${fmt(t.sumi*fh)}</b></div>`:""}<div class="row"><span>Cuotas de consumos cobradas</span><b class="num in">${fmt(t.cons)}</b></div><div class="row"><b>Diferencia</b>${sgn(dif)}</div></div>
    <div class="card"><h2>Por qué sale esta diferencia</h2>${ex.length?ex.map(x=>`<p style="margin:0 0 10px;font-size:14px;line-height:1.45">• ${x}</p>`).join(""):'<p class="small muted">Las cuotas cubren el coste.</p>'}</div>
-   <div class="card"><h2>Mes a mes</h2>${tabla(["Mes","Coste","Cuotas","Diferencia"],rows,["Total",fmt(t.sumi),fmt(t.cons),sgn(dif)])}</div>
-   <div class="card"><h2>Por habitación <span class="sub">parte de cada una: 1/${N} = ${fmt(parte)}</span></h2>${tabla(["Habitación","Pagado","Su parte","Diferencia"],hs.map(x=>[esc(x.r.nombre),fmt(x.c),fmt(parte),sgn(x.d)]))}</div>
+   <div class="card"><h2>Mes a mes</h2>${tabla(fh<1?["Mes","Coste","Parte hab.","Cuotas","Diferencia"]:["Mes","Coste","Cuotas","Diferencia"],rows,fh<1?["Total",fmt(t.sumi),fmt(t.sumi*fh),fmt(t.cons),sgn(dif)]:["Total",fmt(t.sumi),fmt(t.cons),sgn(dif)])}</div>
+   ${q.filas.length?`<div class="card"><h2>Cuota justa por habitación <span class="sub">${MES3[q.comp[0]-1]}–${MES3[q.comp.at(-1)-1]} · ${q.filas.length} meses</span></h2>
+     <div class="row"><span>Gasto real de suministros</span><b class="num">${fmt(q.tot)}</b></div>
+     <div class="row"><span>Parte de cada uno (÷${q.N})</span><b class="num">${fmt(q.parte)}</b></div>
+     <div class="row"><b>Cuota justa media</b><b class="num">${fmt(q.media)}/mes</b></div>
+     ${q.nInv?`<div class="row"><span>Media en meses fríos</span><span class="num">${fmt(q.inv)}/mes</span></div>`:""}${q.nVer?`<div class="row"><span>Media en verano</span><span class="num">${fmt(q.ver)}/mes</span></div>`:""}
+     <div style="margin-top:10px">${tabla(["Habitación","Cuota actual","Pagado","Le toca","Desviación"],hs.map(x=>[esc(x.r.nombre),fmt(x.r.consumos)+"/mes",fmt(x.c),fmt(q.parte),sgn(x.d)]),["Total","",fmt(hs.reduce((a,x)=>a+x.c,0)),fmt(q.parte*hs.length),sgn(hs.reduce((a,x)=>a+x.d,0))])}</div>
+     <p class="small muted" style="margin-bottom:0">Solo cuentan los meses con luz, gas, agua e internet apuntados, para no comparar cuotas ya cobradas con facturas que faltan. Desviación positiva: paga más de lo que le toca.</p></div>
+    <div class="card"><h2>Desviación mes a mes</h2>${tabla(["Mes","Gasto","Le toca",...hs.map(x=>esc(x.r.nombre))],q.filas.map(f=>[MES3[f.m-1],fmt(f.g),fmt(f.p),...f.hs.map(h=>sgn(h.c-f.p))]))}</div>`:`<div class="card small muted">Aún no hay ningún mes con todas las facturas de suministros apuntadas.</div>`}
    <div class="card"><h2>Por suministro</h2>${tabla(["Suministro","Coste"],["luz","gas","agua","internet"].map(c=>[CATS[c][1]+" "+esc(CATS[c][0]),fmt(t.cat[c]||0)]))}</div>`);
   bg.querySelector("[data-x]").onclick=closeSheet;
 }
